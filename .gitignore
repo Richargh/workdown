@@ -1,0 +1,21 @@
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local env/secrets
+.env
+.env.*
+*.local
+
+# clamp
+.clamp
+.clamp/**
+
+# Go
+/bin/
+*.test
+*.out
+vendor/

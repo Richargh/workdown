@@ -1,0 +1,12 @@
+[tools]
+go = ["1.27.1"]
+golangci-lint = ["2.13.2"]
+
+[tasks.check]
+description = "Format, lint, vet, and test"
+run = [
+  "go fmt ./...",
+  "go vet ./...",
+  "golangci-lint run",
+  "go test ./...",
+]
