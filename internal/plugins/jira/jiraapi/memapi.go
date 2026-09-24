@@ -6,8 +6,9 @@ import (
 )
 
 type memClient struct {
-	serverInfoResponse ServerInfo
-	serverInfoError    error
+	serverInfoResponse      ServerInfo
+	serverInfoError         error
+	validateConnectionError error
 }
 
 func NewMemClient(info ServerInfo) JiraAPI {
@@ -15,7 +16,11 @@ func NewMemClient(info ServerInfo) JiraAPI {
 }
 
 func NewFailingMemClient(err error) JiraAPI {
-	return &memClient{serverInfoError: err}
+	return &memClient{serverInfoError: err, validateConnectionError: err}
+}
+
+func NewFailingValidationMemClient(info ServerInfo, err error) JiraAPI {
+	return &memClient{serverInfoResponse: info, validateConnectionError: err}
 }
 
 func (c *memClient) ServerInfo(ctx context.Context) (ServerInfo, error) {
@@ -26,4 +31,8 @@ func (c *memClient) ServerInfo(ctx context.Context) (ServerInfo, error) {
 		return ServerInfo{}, fmt.Errorf("server info response missing base URL")
 	}
 	return c.serverInfoResponse, nil
+}
+
+func (c *memClient) ValidateConnection(ctx context.Context) error {
+	return c.validateConnectionError
 }

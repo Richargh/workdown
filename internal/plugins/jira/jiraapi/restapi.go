@@ -11,9 +11,14 @@ import (
 type restClient struct {
 	baseURL    url.URL
 	httpClient *http.Client
+	pat        string
 }
 
 func NewRestClient(baseURL *url.URL, httpClient *http.Client) (JiraAPI, error) {
+	return NewAuthenticatedRestClient(baseURL, httpClient, "")
+}
+
+func NewAuthenticatedRestClient(baseURL *url.URL, httpClient *http.Client, pat string) (JiraAPI, error) {
 	if baseURL == nil {
 		return nil, fmt.Errorf("jira base URL is required")
 	}
@@ -27,6 +32,7 @@ func NewRestClient(baseURL *url.URL, httpClient *http.Client) (JiraAPI, error) {
 	return &restClient{
 		baseURL:    *baseURL,
 		httpClient: httpClient,
+		pat:        pat,
 	}, nil
 }
 
@@ -39,6 +45,8 @@ func (c *restClient) ServerInfo(ctx context.Context) (ServerInfo, error) {
 	if err != nil {
 		return ServerInfo{}, err
 	}
+
+	c.authorize(request)
 
 	response, err := c.httpClient.Do(request)
 	if err != nil {
@@ -65,4 +73,33 @@ func (c *restClient) ServerInfo(ctx context.Context) (ServerInfo, error) {
 		return ServerInfo{}, err
 	}
 	return NewServerInfo(baseURL, ParseJiraVersion(payload.Version))
+}
+
+func (c *restClient) ValidateConnection(ctx context.Context) error {
+	myselfURL := c.baseURL.JoinPath("rest", "api", "2", "myself")
+	myselfURL.RawQuery = ""
+	myselfURL.Fragment = ""
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, myselfURL.String(), nil)
+	if err != nil {
+		return err
+	}
+	c.authorize(request)
+
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode < 200 || response.StatusCode > 299 {
+		return fmt.Errorf("jira authentication failed: %s", response.Status)
+	}
+	return nil
+}
+
+func (c *restClient) authorize(request *http.Request) {
+	if c.pat != "" {
+		request.Header.Set("Authorization", "Bearer "+c.pat)
+	}
 }

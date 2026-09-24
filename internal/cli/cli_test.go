@@ -20,7 +20,8 @@ func TestRootCommandPrintsHelp(t *testing.T) {
 	// then
 	require.NoError(t, err)
 	require.Contains(t, stdout, "Usage:")
-	require.Contains(t, stdout, "plugins")
+	require.NotContains(t, stdout, "plugins")
+	require.Contains(t, stdout, "remotes")
 }
 
 func TestRootCommandHelpFlagPrintsHelp(t *testing.T) {
@@ -32,7 +33,8 @@ func TestRootCommandHelpFlagPrintsHelp(t *testing.T) {
 	// then
 	require.NoError(t, err)
 	require.Contains(t, stdout, "Usage:")
-	require.Contains(t, stdout, "plugins")
+	require.NotContains(t, stdout, "plugins")
+	require.Contains(t, stdout, "remotes")
 }
 
 func TestVersionFlagsPrintRuntimeVersion(t *testing.T) {
@@ -60,15 +62,52 @@ func TestVersionFallsBackToUnknownVersion(t *testing.T) {
 	require.Equal(t, "?.?.?\n", stdout)
 }
 
-func TestPluginsCommandListsRegisteredPlugins(t *testing.T) {
+func TestRemotesCommandListsRegisteredRemoteProviders(t *testing.T) {
 	// given
 	var stdout bytes.Buffer
 	environment := env.NewMemEnv()
 	environment.Stdout = &stdout
 	root := New(environment, jira.New)
 	// when
-	_, err := runCommand(t, root, "plugins")
+	_, err := runCommand(t, root, "remotes")
 	// then
 	require.NoError(t, err)
 	require.Equal(t, "jira\n", stdout.String())
+}
+
+func TestProviderCommandsLiveUnderRemotes(t *testing.T) {
+	// given
+	environment := env.NewMemEnv()
+	root := New(environment, jira.New)
+
+	// when
+	stdout, err := runCommand(t, root, "remotes", "jira", "--help")
+
+	// then
+	require.NoError(t, err)
+	require.Contains(t, stdout, "Jira provider commands")
+}
+
+func TestProviderCommandsAreNotRootCommands(t *testing.T) {
+	// given
+	environment := env.NewMemEnv()
+	root := New(environment, jira.New)
+
+	// when
+	_, err := runCommand(t, root, "jira", "--help")
+
+	// then
+	require.Error(t, err)
+}
+
+func TestPluginsCommandDoesNotExist(t *testing.T) {
+	// given
+	environment := env.NewMemEnv()
+	root := New(environment, jira.New)
+
+	// when
+	_, err := runCommand(t, root, "plugins")
+
+	// then
+	require.Error(t, err)
 }

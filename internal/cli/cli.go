@@ -33,10 +33,7 @@ func New(environment env.Env, pluginConstructors ...kernelplugin.Constructor) *c
 	}
 	root.Flags().BoolVarP(&versionFlag, "version", "v", false, "Print the Workdown version")
 
-	root.AddCommand(newPluginsCommand(environment, registry))
-	for _, plugin := range registry.All() {
-		root.AddCommand(plugin.Commands()...)
-	}
+	root.AddCommand(newRemotesCommand(environment, registry))
 
 	return root
 }
@@ -50,10 +47,10 @@ func printVersion(cmd *cobra.Command, environment env.Env) error {
 	return err
 }
 
-func newPluginsCommand(environment env.Env, registry kernelplugin.Registry) *cobra.Command {
-	return &cobra.Command{
-		Use:   "plugins",
-		Short: "List registered remote plugins",
+func newRemotesCommand(environment env.Env, registry kernelplugin.Registry) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "remotes",
+		Short: "List remote providers and run provider commands",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			out := environment.Stdout
 			if out == nil {
@@ -67,4 +64,8 @@ func newPluginsCommand(environment env.Env, registry kernelplugin.Registry) *cob
 			return nil
 		},
 	}
+	for _, plugin := range registry.All() {
+		cmd.AddCommand(plugin.Commands()...)
+	}
+	return cmd
 }

@@ -25,11 +25,16 @@ func TestRestClientContract(t *testing.T) {
 		t.Helper()
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			require.Equal(t, http.MethodGet, r.Method)
-			require.Equal(t, "/rest/api/2/serverInfo", r.URL.Path)
-
-			w.Header().Set("Content-Type", "application/json")
-			_, err := w.Write([]byte(`{"baseUrl":"https://jira.example.test","version":"9.12.0"}`))
-			require.NoError(t, err)
+			switch r.URL.Path {
+			case "/rest/api/2/serverInfo":
+				w.Header().Set("Content-Type", "application/json")
+				_, err := w.Write([]byte(`{"baseUrl":"https://jira.example.test","version":"9.12.0"}`))
+				require.NoError(t, err)
+			case "/rest/api/2/myself":
+				w.WriteHeader(http.StatusOK)
+			default:
+				t.Fatalf("unexpected path %s", r.URL.Path)
+			}
 		}))
 		t.Cleanup(server.Close)
 
@@ -58,6 +63,17 @@ func testJiraAPIContract(t *testing.T, newAPI func(t *testing.T) jiraapi.JiraAPI
 		require.Equal(t, "https://jira.example.test", baseURL.String())
 		require.Equal(t, "9.12.0", serverInfo.Version().String())
 	})
+
+	t.Run("validate connection succeeds", func(t *testing.T) {
+		// given
+		api := newAPI(t)
+
+		// when
+		err := api.ValidateConnection(context.Background())
+
+		// then
+		require.NoError(t, err)
+	})
 }
 
 func TestMemClientReturnsConfiguredError(t *testing.T) {
@@ -71,6 +87,44 @@ func TestMemClientReturnsConfiguredError(t *testing.T) {
 	// then
 	require.ErrorIs(t, err, want)
 	require.Equal(t, jiraapi.ServerInfo{}, serverInfo)
+}
+
+func TestRestClientSendsPATAsBearerTokenWhenValidatingConnection(t *testing.T) {
+	// given
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/rest/api/2/myself", r.URL.Path)
+		require.Equal(t, "Bearer secret-token", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	baseURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	api, err := jiraapi.NewAuthenticatedRestClient(baseURL, server.Client(), "secret-token")
+	require.NoError(t, err)
+
+	// when
+	err = api.ValidateConnection(context.Background())
+
+	// then
+	require.NoError(t, err)
+}
+
+func TestRestClientReturnsErrorForValidationHTTPFailure(t *testing.T) {
+	// given
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	baseURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	api, err := jiraapi.NewRestClient(baseURL, server.Client())
+	require.NoError(t, err)
+
+	// when
+	err = api.ValidateConnection(context.Background())
+
+	// then
+	require.Error(t, err)
 }
 
 func TestNewRestClientRequiresBaseURL(t *testing.T) {

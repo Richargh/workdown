@@ -9,6 +9,7 @@ import (
 
 type JiraAPI interface {
 	ServerInfo(ctx context.Context) (ServerInfo, error)
+	ValidateConnection(ctx context.Context) error
 }
 
 type JiraVersion struct {
