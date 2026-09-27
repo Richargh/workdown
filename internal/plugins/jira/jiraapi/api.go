@@ -10,6 +10,11 @@ import (
 type JiraAPI interface {
 	ServerInfo(ctx context.Context) (ServerInfo, error)
 	ValidateConnection(ctx context.Context) error
+	SearchIssues(ctx context.Context, jql string) (IssueSearchResult, error)
+}
+
+type IssueSearchResult struct {
+	Total int
 }
 
 type JiraVersion struct {

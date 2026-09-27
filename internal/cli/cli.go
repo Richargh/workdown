@@ -47,6 +47,10 @@ func printVersion(cmd *cobra.Command, environment env.Env) error {
 	return err
 }
 
+type remoteCommandProvider interface {
+	Commands() []*cobra.Command
+}
+
 func newRemotesCommand(environment env.Env, registry kernelplugin.Registry) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "remotes",
@@ -65,7 +69,9 @@ func newRemotesCommand(environment env.Env, registry kernelplugin.Registry) *cob
 		},
 	}
 	for _, plugin := range registry.All() {
-		cmd.AddCommand(plugin.Commands()...)
+		if provider, ok := plugin.(remoteCommandProvider); ok {
+			cmd.AddCommand(provider.Commands()...)
+		}
 	}
 	return cmd
 }

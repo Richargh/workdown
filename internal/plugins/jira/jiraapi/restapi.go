@@ -98,6 +98,39 @@ func (c *restClient) ValidateConnection(ctx context.Context) error {
 	return nil
 }
 
+func (c *restClient) SearchIssues(ctx context.Context, jql string) (IssueSearchResult, error) {
+	searchURL := c.baseURL.JoinPath("rest", "api", "2", "search")
+	query := searchURL.Query()
+	query.Set("jql", jql)
+	query.Set("maxResults", "0")
+	searchURL.RawQuery = query.Encode()
+	searchURL.Fragment = ""
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, searchURL.String(), nil)
+	if err != nil {
+		return IssueSearchResult{}, err
+	}
+	c.authorize(request)
+
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return IssueSearchResult{}, err
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode < 200 || response.StatusCode > 299 {
+		return IssueSearchResult{}, fmt.Errorf("jira issue search failed: %s", response.Status)
+	}
+
+	var payload struct {
+		Total int `json:"total"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return IssueSearchResult{}, err
+	}
+	return IssueSearchResult{Total: payload.Total}, nil
+}
+
 func (c *restClient) authorize(request *http.Request) {
 	if c.pat != "" {
 		request.Header.Set("Authorization", "Bearer "+c.pat)

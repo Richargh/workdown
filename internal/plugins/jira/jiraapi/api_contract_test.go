@@ -16,73 +16,95 @@ import (
 func TestMemClientContract(t *testing.T) {
 	testJiraAPIContract(t, func(t *testing.T) jiraapi.JiraAPI {
 		t.Helper()
-		return jiraapi.NewMemClient(newServerInfo(t, "https://jira.example.test", "9.12.0"))
+		return jiraapi.NewIssueSearchMemClient(newServerInfo(t, "https://jira.example.test", "9.12.0"), 2)
 	})
 }
 
 func TestRestClientContract(t *testing.T) {
 	testJiraAPIContract(t, func(t *testing.T) jiraapi.JiraAPI {
 		t.Helper()
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			require.Equal(t, http.MethodGet, r.Method)
-			switch r.URL.Path {
-			case "/rest/api/2/serverInfo":
-				w.Header().Set("Content-Type", "application/json")
-				_, err := w.Write([]byte(`{"baseUrl":"https://jira.example.test","version":"9.12.0"}`))
-				require.NoError(t, err)
-			case "/rest/api/2/myself":
-				w.WriteHeader(http.StatusOK)
-			default:
-				t.Fatalf("unexpected path %s", r.URL.Path)
-			}
-		}))
+		server := configureHttpServerRoutes(t)
 		t.Cleanup(server.Close)
 
 		baseURL, err := url.Parse(server.URL)
 		require.NoError(t, err)
 
-		api, err := jiraapi.NewRestClient(baseURL, server.Client())
+		testee, err := jiraapi.NewRestClient(baseURL, server.Client())
 		require.NoError(t, err)
-		return api
+		return testee
 	})
 }
 
-func testJiraAPIContract(t *testing.T, newAPI func(t *testing.T) jiraapi.JiraAPI) {
+func configureHttpServerRoutes(t *testing.T) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodGet, r.Method)
+		switch r.URL.Path {
+		case "/rest/api/2/serverInfo":
+			w.Header().Set("Content-Type", "application/json")
+			_, err := w.Write([]byte(`{"baseUrl":"https://jira.example.test","version":"9.12.0"}`))
+			require.NoError(t, err)
+		case "/rest/api/2/myself":
+			w.WriteHeader(http.StatusOK)
+		case "/rest/api/2/search":
+			require.Equal(t, "project = PROJ", r.URL.Query().Get("jql"))
+			require.Equal(t, "0", r.URL.Query().Get("maxResults"))
+			w.Header().Set("Content-Type", "application/json")
+			_, err := w.Write([]byte(`{"total":2}`))
+			require.NoError(t, err)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+}
+
+func testJiraAPIContract(t *testing.T, newTestee func(t *testing.T) jiraapi.JiraAPI) {
 	t.Helper()
 
 	t.Run("server info returns base URL and version", func(t *testing.T) {
 		// given
-		api := newAPI(t)
+		testee := newTestee(t)
 
 		// when
-		serverInfo, err := api.ServerInfo(context.Background())
+		result, err := testee.ServerInfo(context.Background())
 
 		// then
 		require.NoError(t, err)
-		baseURL := serverInfo.BaseURL()
+		baseURL := result.BaseURL()
 		require.Equal(t, "https://jira.example.test", baseURL.String())
-		require.Equal(t, "9.12.0", serverInfo.Version().String())
+		require.Equal(t, "9.12.0", result.Version().String())
 	})
 
 	t.Run("validate connection succeeds", func(t *testing.T) {
 		// given
-		api := newAPI(t)
+		testee := newTestee(t)
 
 		// when
-		err := api.ValidateConnection(context.Background())
+		err := testee.ValidateConnection(context.Background())
 
 		// then
 		require.NoError(t, err)
+	})
+
+	t.Run("search issues returns total count", func(t *testing.T) {
+		// given
+		testee := newTestee(t)
+
+		// when
+		result, err := testee.SearchIssues(context.Background(), "project = PROJ")
+
+		// then
+		require.NoError(t, err)
+		require.Equal(t, 2, result.Total)
 	})
 }
 
 func TestMemClientReturnsConfiguredError(t *testing.T) {
 	// given
 	want := errors.New("boom")
-	api := jiraapi.NewFailingMemClient(want)
+	testee := jiraapi.NewFailingMemClient(want)
 
 	// when
-	serverInfo, err := api.ServerInfo(context.Background())
+	serverInfo, err := testee.ServerInfo(context.Background())
 
 	// then
 	require.ErrorIs(t, err, want)
@@ -99,11 +121,11 @@ func TestRestClientSendsPATAsBearerTokenWhenValidatingConnection(t *testing.T) {
 	defer server.Close()
 	baseURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	api, err := jiraapi.NewAuthenticatedRestClient(baseURL, server.Client(), "secret-token")
+	testee, err := jiraapi.NewAuthenticatedRestClient(baseURL, server.Client(), "secret-token")
 	require.NoError(t, err)
 
 	// when
-	err = api.ValidateConnection(context.Background())
+	err = testee.ValidateConnection(context.Background())
 
 	// then
 	require.NoError(t, err)
@@ -117,11 +139,11 @@ func TestRestClientReturnsErrorForValidationHTTPFailure(t *testing.T) {
 	defer server.Close()
 	baseURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	api, err := jiraapi.NewRestClient(baseURL, server.Client())
+	testee, err := jiraapi.NewRestClient(baseURL, server.Client())
 	require.NoError(t, err)
 
 	// when
-	err = api.ValidateConnection(context.Background())
+	err = testee.ValidateConnection(context.Background())
 
 	// then
 	require.Error(t, err)
@@ -142,11 +164,11 @@ func TestNewRestClientRequiresAbsoluteBaseURL(t *testing.T) {
 	require.NoError(t, err)
 
 	// when
-	api, err := jiraapi.NewRestClient(baseURL, http.DefaultClient)
+	testee, err := jiraapi.NewRestClient(baseURL, http.DefaultClient)
 
 	// then
 	require.Error(t, err)
-	require.Nil(t, api)
+	require.Nil(t, testee)
 }
 
 func TestNewRestClientRequiresHTTPClient(t *testing.T) {
@@ -155,11 +177,11 @@ func TestNewRestClientRequiresHTTPClient(t *testing.T) {
 	require.NoError(t, err)
 
 	// when
-	api, err := jiraapi.NewRestClient(baseURL, nil)
+	testee, err := jiraapi.NewRestClient(baseURL, nil)
 
 	// then
 	require.Error(t, err)
-	require.Nil(t, api)
+	require.Nil(t, testee)
 }
 
 func TestRestClientReturnsErrorForHTTPFailure(t *testing.T) {
@@ -170,11 +192,11 @@ func TestRestClientReturnsErrorForHTTPFailure(t *testing.T) {
 	defer server.Close()
 	baseURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	api, err := jiraapi.NewRestClient(baseURL, server.Client())
+	testee, err := jiraapi.NewRestClient(baseURL, server.Client())
 	require.NoError(t, err)
 
 	// when
-	serverInfo, err := api.ServerInfo(context.Background())
+	serverInfo, err := testee.ServerInfo(context.Background())
 
 	// then
 	require.Error(t, err)

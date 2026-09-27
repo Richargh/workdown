@@ -1,10 +1,10 @@
 package jira
 
 import (
+	"context"
 	"fmt"
 	"net/url"
-
-	"github.com/spf13/cobra"
+	"strings"
 
 	"github.com/richargh/workdown/internal/kernel/env"
 	"github.com/richargh/workdown/internal/kernel/plugin"
@@ -17,77 +17,128 @@ type jiraConnection struct {
 	URL string
 }
 
-type jiraPlugin struct {
+type Plugin struct {
 	environment env.Env
 	newAPI      apiFactory
 }
 
 func New(environment env.Env) plugin.RemotePlugin {
+	return NewService(environment)
+}
+
+func NewService(environment env.Env) *Plugin {
 	return newPlugin(environment, defaultAPIFactory(environment))
 }
 
-func NewWithAPI(environment env.Env, api jiraapi.JiraAPI) plugin.RemotePlugin {
+func NewWithAPI(environment env.Env, api jiraapi.JiraAPI) *Plugin {
 	return newPlugin(environment, func(jiraConnection, string) (jiraapi.JiraAPI, error) { return api, nil })
 }
 
-func newPlugin(environment env.Env, factory apiFactory) plugin.RemotePlugin {
-	return &jiraPlugin{environment: environment, newAPI: factory}
+func newPlugin(environment env.Env, factory apiFactory) *Plugin {
+	return &Plugin{environment: environment, newAPI: factory}
 }
 
-func (p *jiraPlugin) Name() string {
+func (p *Plugin) Name() string {
 	return "jira"
 }
 
-func (p *jiraPlugin) Commands() []*cobra.Command {
-	return []*cobra.Command{p.newJiraCommand()}
+type CheckRequest struct {
+	URL     string
+	PAT     string
+	Project string
 }
 
-func (p *jiraPlugin) newJiraCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "jira",
-		Short: "Jira provider commands",
-	}
-	cmd.AddCommand(p.newCheckCommand())
-	return cmd
+type CheckResult struct {
+	BaseURL           string
+	Version           string
+	Project           string
+	ProjectIssueCount int
 }
 
-func (p *jiraPlugin) newCheckCommand() *cobra.Command {
-	var jiraURL string
-	var pat string
-	cmd := &cobra.Command{
-		Use:   "check",
-		Short: "Verify Jira connectivity and PAT validity",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if pat == "" {
-				return fmt.Errorf("--pat is required")
-			}
-			connection, err := newJiraConnection(jiraURL)
-			if err != nil {
-				return err
-			}
-			api, err := p.newAPI(connection, pat)
-			if err != nil {
-				return err
-			}
-			if err := api.ValidateConnection(cmd.Context()); err != nil {
-				return err
-			}
-			serverInfo, err := api.ServerInfo(cmd.Context())
-			if err != nil {
-				return err
-			}
-			out := p.environment.Stdout
-			if out == nil {
-				out = cmd.OutOrStdout()
-			}
-			baseURL := serverInfo.BaseURL()
-			_, err = fmt.Fprintf(out, "jira %s ok (version %s)\n", baseURL.String(), serverInfo.Version().String())
-			return err
-		},
+func (r CheckResult) HasProject() bool {
+	return r.Project != ""
+}
+
+func (p *Plugin) Check(ctx context.Context, request CheckRequest) (CheckResult, error) {
+	if request.PAT == "" {
+		return CheckResult{}, fmt.Errorf("--pat is required")
 	}
-	cmd.Flags().StringVar(&jiraURL, "url", "", "Jira base URL")
-	cmd.Flags().StringVar(&pat, "pat", "", "Jira personal access token")
-	return cmd
+	connection, err := newJiraConnection(request.URL)
+	if err != nil {
+		return CheckResult{}, err
+	}
+	api, err := p.newAPI(connection, request.PAT)
+	if err != nil {
+		return CheckResult{}, err
+	}
+	if err := api.ValidateConnection(ctx); err != nil {
+		return CheckResult{}, err
+	}
+	serverInfo, err := api.ServerInfo(ctx)
+	if err != nil {
+		return CheckResult{}, err
+	}
+	baseURL := serverInfo.BaseURL()
+	result := CheckResult{
+		BaseURL: baseURL.String(),
+		Version: serverInfo.Version().String(),
+		Project: request.Project,
+	}
+	if request.Project != "" {
+		searchResult, err := api.SearchIssues(ctx, projectIssuesJQL(request.Project))
+		if err != nil {
+			return CheckResult{}, err
+		}
+		result.ProjectIssueCount = searchResult.Total
+	}
+	return result, nil
+}
+
+type PullRequest struct {
+	URL       string
+	PAT       string
+	Project   string
+	IssueKeys []string
+}
+
+type PullResult struct {
+	IssueCount int
+}
+
+func (p *Plugin) Pull(ctx context.Context, request PullRequest) (PullResult, error) {
+	if request.PAT == "" {
+		return PullResult{}, fmt.Errorf("--pat is required")
+	}
+	if request.Project == "" {
+		return PullResult{}, fmt.Errorf("--project is required")
+	}
+	if len(request.IssueKeys) == 0 {
+		return PullResult{}, fmt.Errorf("--issues is required")
+	}
+	connection, err := newJiraConnection(request.URL)
+	if err != nil {
+		return PullResult{}, err
+	}
+	api, err := p.newAPI(connection, request.PAT)
+	if err != nil {
+		return PullResult{}, err
+	}
+	if err := api.ValidateConnection(ctx); err != nil {
+		return PullResult{}, err
+	}
+	searchResult, err := api.SearchIssues(ctx, selectedProjectIssuesJQL(request.Project, request.IssueKeys))
+	if err != nil {
+		return PullResult{}, err
+	}
+	return PullResult{IssueCount: searchResult.Total}, nil
+}
+
+func projectIssuesJQL(project string) string {
+	return fmt.Sprintf("project = %s", project)
+}
+
+func selectedProjectIssuesJQL(project string, issueKeys []string) string {
+	return fmt.Sprintf("%s AND key in (%s)", projectIssuesJQL(project), strings.Join(issueKeys, ", "))
 }
 
 func newJiraConnection(jiraURL string) (jiraConnection, error) {
