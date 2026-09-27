@@ -1,4 +1,4 @@
-Always start replies with STARTER_CHARACTER + space (default: 📋). Stack emojis when requested, don't replace.
+Always start replies with STARTER_CHARACTER + space (default: 📋). Stack emojis, don't replace.
 
 # Agent Instructions
 
