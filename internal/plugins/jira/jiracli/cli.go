@@ -1,6 +1,7 @@
 package jiracli
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -17,7 +18,7 @@ type adapter struct {
 }
 
 func New(environment env.Env) plugin.RemotePlugin {
-	return NewWithService(environment, jira.NewService(environment))
+	return NewWithService(environment, jira.New(environment))
 }
 
 func NewWithService(environment env.Env, service *jira.Plugin) plugin.RemotePlugin {
@@ -79,30 +80,34 @@ func (a *adapter) newPullCommand() *cobra.Command {
 	var pat string
 	var project string
 	var issues string
+	var limit int
 	cmd := &cobra.Command{
 		Use:   "pull",
 		Short: "Pull selected Jira issues as Workdown interchange",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			out := a.environment.Stdout
+			if out == nil {
+				out = cmd.OutOrStdout()
+			}
 			result, err := a.service.Pull(cmd.Context(), jira.PullRequest{
 				URL:       jiraURL,
 				PAT:       pat,
 				Project:   project,
 				IssueKeys: parseIssueKeys(issues),
+				Limit:     limit,
 			})
 			if err != nil {
 				return err
 			}
-			out := a.environment.Stdout
-			if out == nil {
-				out = cmd.OutOrStdout()
-			}
-			_, err = fmt.Fprintf(out, "%d issues\n", result.IssueCount)
-			return err
+			encoder := json.NewEncoder(out)
+			encoder.SetIndent("", "  ")
+			return encoder.Encode(result.WorkItems)
 		},
 	}
 	cmd.Flags().StringVar(&jiraURL, "url", "", "Jira base URL")
 	cmd.Flags().StringVar(&project, "project", "", "Jira project key")
 	cmd.Flags().StringVar(&issues, "issues", "", "Comma-separated Jira issue keys to pull")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of Jira issues to pull")
 	cmd.Flags().StringVar(&pat, "pat", "", "Jira personal access token")
 	return cmd
 }

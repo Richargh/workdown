@@ -16,7 +16,9 @@ import (
 func TestMemClientContract(t *testing.T) {
 	testJiraAPIContract(t, func(t *testing.T) jiraapi.JiraAPI {
 		t.Helper()
-		return jiraapi.NewIssueSearchMemClient(newServerInfo(t, "https://jira.example.test", "9.12.0"), 2)
+		return jiraapi.NewIssueSearchWithIssuesMemClient(newServerInfo(t, "https://jira.example.test", "9.12.0"), []jiraapi.JiraIssue{
+			newJiraIssue("10001", "PROJ-1", "PROJ", "Task", "Write docs"),
+		})
 	})
 }
 
@@ -47,9 +49,10 @@ func configureHttpServerRoutes(t *testing.T) *httptest.Server {
 			w.WriteHeader(http.StatusOK)
 		case "/rest/api/2/search":
 			require.Equal(t, "project = PROJ", r.URL.Query().Get("jql"))
-			require.Equal(t, "0", r.URL.Query().Get("maxResults"))
+			require.Equal(t, "summary,issuetype,project", r.URL.Query().Get("fields"))
+			require.Equal(t, "1", r.URL.Query().Get("maxResults"))
 			w.Header().Set("Content-Type", "application/json")
-			_, err := w.Write([]byte(`{"total":2}`))
+			_, err := w.Write([]byte(`{"total":1,"issues":[{"id":"10001","key":"PROJ-1","fields":{"summary":"Write docs","issuetype":{"name":"Task"},"project":{"key":"PROJ"}}}]}`))
 			require.NoError(t, err)
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -90,11 +93,16 @@ func testJiraAPIContract(t *testing.T, newTestee func(t *testing.T) jiraapi.Jira
 		testee := newTestee(t)
 
 		// when
-		result, err := testee.SearchIssues(context.Background(), "project = PROJ")
+		result, err := testee.SearchIssues(context.Background(), jiraapi.JiraIssueSearchRequest{
+			JQL:        "project = PROJ",
+			Fields:     []string{"summary", "issuetype", "project"},
+			MaxResults: 1,
+		})
 
 		// then
 		require.NoError(t, err)
-		require.Equal(t, 2, result.Total)
+		require.Equal(t, 1, result.Total)
+		require.Equal(t, []jiraapi.JiraIssue{newJiraIssue("10001", "PROJ-1", "PROJ", "Task", "Write docs")}, result.Issues)
 	})
 }
 
@@ -201,6 +209,18 @@ func TestRestClientReturnsErrorForHTTPFailure(t *testing.T) {
 	// then
 	require.Error(t, err)
 	require.Equal(t, jiraapi.ServerInfo{}, serverInfo)
+}
+
+func newJiraIssue(id string, key string, project string, issueType string, summary string) jiraapi.JiraIssue {
+	return jiraapi.JiraIssue{
+		ID:  id,
+		Key: key,
+		Fields: jiraapi.JiraIssueFields{
+			Summary:   summary,
+			IssueType: jiraapi.JiraNamedValue{Name: issueType},
+			Project:   jiraapi.JiraProject{Key: project},
+		},
+	}
 }
 
 func newServerInfo(t *testing.T, rawBaseURL string, rawVersion string) jiraapi.ServerInfo {

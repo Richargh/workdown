@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/richargh/workdown/internal/kernel"
 	"github.com/richargh/workdown/internal/kernel/env"
 	"github.com/richargh/workdown/internal/plugins/jira/jiraapi"
 )
@@ -83,38 +84,94 @@ func TestJiraCheckRequiresURL(t *testing.T) {
 	require.ErrorContains(t, err, "--url is required")
 }
 
-func TestJiraPullCountsSelectedProjectIssues(t *testing.T) {
+func TestJiraPullEmitsInterchangeWorkItems(t *testing.T) {
 	// given
 	environment := env.NewMemEnv()
-	api := jiraapi.NewIssueSearchMemClient(newServerInfo(t), 3)
+	api := jiraapi.NewIssueSearchWithIssuesMemClient(newServerInfo(t), []jiraapi.JiraIssue{
+		newJiraIssue("10001", "PROJ-1", "PROJ", "Task", "Write docs"),
+		newJiraIssue("10002", "PROJ-2", "PROJ", "Bug", "Fix sync"),
+	})
 	plugin := NewWithAPI(environment, api)
 
 	// when
-	result, err := plugin.Pull(context.Background(), PullRequest{URL: "https://jira.example.test", Project: "PROJ", IssueKeys: []string{"PROJ-1", "PROJ-2"}, PAT: "secret-token"})
+	result, err := plugin.Pull(context.Background(), PullRequest{URL: "https://jira.example.test", Project: "PROJ", PAT: "secret-token"})
 
 	// then
 	require.NoError(t, err)
-	require.Equal(t, 3, result.IssueCount)
-	require.Equal(t, []string{"project = PROJ AND key in (PROJ-1, PROJ-2)"}, jiraapi.SearchIssuesQueries(api))
+	require.Equal(t, []string{"project = PROJ"}, jiraapi.SearchIssuesQueries(api))
+	require.Equal(t, [][]string{{"summary", "issuetype", "project"}}, jiraapi.SearchIssuesFields(api))
+	require.Equal(t, []int{5}, jiraapi.SearchIssuesLimits(api))
+	require.Len(t, result.WorkItems, 2)
+	require.Equal(t, "jira", result.WorkItems[0].Provider)
+	require.Equal(t, "10001", result.WorkItems[0].ID)
+	require.Equal(t, "PROJ-1", result.WorkItems[0].Key)
+	require.Equal(t, "Write docs", result.WorkItems[0].Title)
+	require.Equal(t, []kernel.Field{
+		{Name: "project", ProviderKey: "project", Type: "string", Value: "PROJ", Editable: false},
+		{Name: "issueType", ProviderKey: "issuetype", Type: "string", Value: "Task", Editable: false},
+	}, result.WorkItems[0].Fields)
+	require.Equal(t, "https://jira.example.test/browse/PROJ-1", result.WorkItems[0].URL)
 }
 
-func TestJiraPullRequiresIssues(t *testing.T) {
+func TestJiraPullUsesRequestedLimit(t *testing.T) {
 	// given
 	environment := env.NewMemEnv()
-	api := jiraapi.NewIssueSearchMemClient(newServerInfo(t), 3)
+	api := jiraapi.NewIssueSearchWithIssuesMemClient(newServerInfo(t), []jiraapi.JiraIssue{})
 	plugin := NewWithAPI(environment, api)
 
 	// when
-	_, err := plugin.Pull(context.Background(), PullRequest{URL: "https://jira.example.test", Project: "PROJ", PAT: "secret-token"})
+	_, err := plugin.Pull(context.Background(), PullRequest{URL: "https://jira.example.test", Project: "PROJ", PAT: "secret-token", Limit: 2})
 
 	// then
-	require.ErrorContains(t, err, "--issues is required")
+	require.NoError(t, err)
+	require.Equal(t, []int{2}, jiraapi.SearchIssuesLimits(api))
+}
+
+func TestJiraPullRejectsNegativeLimit(t *testing.T) {
+	// given
+	environment := env.NewMemEnv()
+	api := jiraapi.NewIssueSearchWithIssuesMemClient(newServerInfo(t), []jiraapi.JiraIssue{})
+	plugin := NewWithAPI(environment, api)
+
+	// when
+	_, err := plugin.Pull(context.Background(), PullRequest{URL: "https://jira.example.test", Project: "PROJ", PAT: "secret-token", Limit: -1})
+
+	// then
+	require.ErrorContains(t, err, "--limit must be positive")
+}
+
+func TestJiraPullCanLimitToSelectedIssues(t *testing.T) {
+	// given
+	environment := env.NewMemEnv()
+	api := jiraapi.NewIssueSearchWithIssuesMemClient(newServerInfo(t), []jiraapi.JiraIssue{})
+	plugin := NewWithAPI(environment, api)
+
+	// when
+	_, err := plugin.Pull(context.Background(), PullRequest{URL: "https://jira.example.test", Project: "PROJ", IssueKeys: []string{"PROJ-1", "PROJ-2"}, PAT: "secret-token"})
+
+	// then
+	require.NoError(t, err)
+	require.Equal(t, []string{"project = PROJ AND key in (PROJ-1, PROJ-2)"}, jiraapi.SearchIssuesQueries(api))
+	require.Equal(t, []int{2}, jiraapi.SearchIssuesLimits(api))
+}
+
+func TestJiraPullRejectsLimitSmallerThanSelectedIssues(t *testing.T) {
+	// given
+	environment := env.NewMemEnv()
+	api := jiraapi.NewIssueSearchWithIssuesMemClient(newServerInfo(t), []jiraapi.JiraIssue{})
+	plugin := NewWithAPI(environment, api)
+
+	// when
+	_, err := plugin.Pull(context.Background(), PullRequest{URL: "https://jira.example.test", Project: "PROJ", IssueKeys: []string{"PROJ-1", "PROJ-2"}, PAT: "secret-token", Limit: 1})
+
+	// then
+	require.ErrorContains(t, err, "--limit must be at least the number of selected issues")
 }
 
 func TestJiraPullRequiresProject(t *testing.T) {
 	// given
 	environment := env.NewMemEnv()
-	api := jiraapi.NewIssueSearchMemClient(newServerInfo(t), 3)
+	api := jiraapi.NewIssueSearchWithIssuesMemClient(newServerInfo(t), []jiraapi.JiraIssue{})
 	plugin := NewWithAPI(environment, api)
 
 	// when
@@ -122,6 +179,18 @@ func TestJiraPullRequiresProject(t *testing.T) {
 
 	// then
 	require.ErrorContains(t, err, "--project is required")
+}
+
+func newJiraIssue(id string, key string, project string, issueType string, summary string) jiraapi.JiraIssue {
+	return jiraapi.JiraIssue{
+		ID:  id,
+		Key: key,
+		Fields: jiraapi.JiraIssueFields{
+			Summary:   summary,
+			IssueType: jiraapi.JiraNamedValue{Name: issueType},
+			Project:   jiraapi.JiraProject{Key: project},
+		},
+	}
 }
 
 func newServerInfo(t *testing.T) jiraapi.ServerInfo {

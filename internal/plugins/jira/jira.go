@@ -6,15 +6,19 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/richargh/workdown/internal/kernel"
 	"github.com/richargh/workdown/internal/kernel/env"
-	"github.com/richargh/workdown/internal/kernel/plugin"
 	"github.com/richargh/workdown/internal/plugins/jira/jiraapi"
 )
 
-type apiFactory func(jiraConnection, string) (jiraapi.JiraAPI, error)
+type apiFactory func(JiraURL, string) (jiraapi.JiraAPI, error)
 
-type jiraConnection struct {
-	URL string
+type JiraURL struct {
+	value url.URL
+}
+
+func (u JiraURL) String() string {
+	return u.value.String()
 }
 
 type Plugin struct {
@@ -22,16 +26,12 @@ type Plugin struct {
 	newAPI      apiFactory
 }
 
-func New(environment env.Env) plugin.RemotePlugin {
-	return NewService(environment)
-}
-
-func NewService(environment env.Env) *Plugin {
+func New(environment env.Env) *Plugin {
 	return newPlugin(environment, defaultAPIFactory(environment))
 }
 
 func NewWithAPI(environment env.Env, api jiraapi.JiraAPI) *Plugin {
-	return newPlugin(environment, func(jiraConnection, string) (jiraapi.JiraAPI, error) { return api, nil })
+	return newPlugin(environment, func(JiraURL, string) (jiraapi.JiraAPI, error) { return api, nil })
 }
 
 func newPlugin(environment env.Env, factory apiFactory) *Plugin {
@@ -60,18 +60,11 @@ func (r CheckResult) HasProject() bool {
 }
 
 func (p *Plugin) Check(ctx context.Context, request CheckRequest) (CheckResult, error) {
-	if request.PAT == "" {
-		return CheckResult{}, fmt.Errorf("--pat is required")
-	}
-	connection, err := newJiraConnection(request.URL)
-	if err != nil {
+	if err := request.validate(); err != nil {
 		return CheckResult{}, err
 	}
-	api, err := p.newAPI(connection, request.PAT)
+	api, _, err := p.validatedAPI(ctx, request.URL, request.PAT)
 	if err != nil {
-		return CheckResult{}, err
-	}
-	if err := api.ValidateConnection(ctx); err != nil {
 		return CheckResult{}, err
 	}
 	serverInfo, err := api.ServerInfo(ctx)
@@ -85,7 +78,7 @@ func (p *Plugin) Check(ctx context.Context, request CheckRequest) (CheckResult, 
 		Project: request.Project,
 	}
 	if request.Project != "" {
-		searchResult, err := api.SearchIssues(ctx, projectIssuesJQL(request.Project))
+		searchResult, err := api.SearchIssues(ctx, jiraapi.JiraIssueSearchRequest{JQL: projectIssuesJQL(request.Project)})
 		if err != nil {
 			return CheckResult{}, err
 		}
@@ -94,43 +87,116 @@ func (p *Plugin) Check(ctx context.Context, request CheckRequest) (CheckResult, 
 	return result, nil
 }
 
+const defaultPullLimit = 5
+
 type PullRequest struct {
 	URL       string
 	PAT       string
 	Project   string
 	IssueKeys []string
+	Limit     int
 }
 
 type PullResult struct {
-	IssueCount int
+	WorkItems []kernel.WorkItem
 }
 
 func (p *Plugin) Pull(ctx context.Context, request PullRequest) (PullResult, error) {
-	if request.PAT == "" {
-		return PullResult{}, fmt.Errorf("--pat is required")
+	if err := request.validate(); err != nil {
+		return PullResult{}, err
 	}
-	if request.Project == "" {
-		return PullResult{}, fmt.Errorf("--project is required")
-	}
-	if len(request.IssueKeys) == 0 {
-		return PullResult{}, fmt.Errorf("--issues is required")
-	}
-	connection, err := newJiraConnection(request.URL)
+	api, jiraURL, err := p.validatedAPI(ctx, request.URL, request.PAT)
 	if err != nil {
 		return PullResult{}, err
 	}
-	api, err := p.newAPI(connection, request.PAT)
+	searchResult, err := api.SearchIssues(ctx, jiraapi.JiraIssueSearchRequest{
+		JQL:        request.jql(),
+		Fields:     []string{"summary", "issuetype", "project"},
+		MaxResults: request.limit(),
+	})
 	if err != nil {
 		return PullResult{}, err
+	}
+	return pullResultFromIssues(jiraURL.String(), searchResult.Issues), nil
+}
+
+func (r CheckRequest) validate() error {
+	if r.PAT == "" {
+		return fmt.Errorf("--pat is required")
+	}
+	return nil
+}
+
+func (r PullRequest) validate() error {
+	if r.PAT == "" {
+		return fmt.Errorf("--pat is required")
+	}
+	if r.Project == "" {
+		return fmt.Errorf("--project is required")
+	}
+	if r.Limit < 0 {
+		return fmt.Errorf("--limit must be positive")
+	}
+	if len(r.IssueKeys) > 0 && r.Limit > 0 && r.Limit < len(r.IssueKeys) {
+		return fmt.Errorf("--limit must be at least the number of selected issues")
+	}
+	return nil
+}
+
+func (r PullRequest) jql() string {
+	if len(r.IssueKeys) > 0 {
+		return selectedProjectIssuesJQL(r.Project, r.IssueKeys)
+	}
+	return projectIssuesJQL(r.Project)
+}
+
+func (r PullRequest) limit() int {
+	if r.Limit > 0 {
+		return r.Limit
+	}
+	if len(r.IssueKeys) > 0 {
+		return len(r.IssueKeys)
+	}
+	return defaultPullLimit
+}
+
+func (p *Plugin) validatedAPI(ctx context.Context, rawURL string, pat string) (jiraapi.JiraAPI, JiraURL, error) {
+	jiraURL, err := parseJiraURL(rawURL)
+	if err != nil {
+		return nil, JiraURL{}, err
+	}
+	api, err := p.newAPI(jiraURL, pat)
+	if err != nil {
+		return nil, JiraURL{}, err
 	}
 	if err := api.ValidateConnection(ctx); err != nil {
-		return PullResult{}, err
+		return nil, JiraURL{}, err
 	}
-	searchResult, err := api.SearchIssues(ctx, selectedProjectIssuesJQL(request.Project, request.IssueKeys))
-	if err != nil {
-		return PullResult{}, err
+	return api, jiraURL, nil
+}
+
+func pullResultFromIssues(remoteURL string, issues []jiraapi.JiraIssue) PullResult {
+	workItems := make([]kernel.WorkItem, 0, len(issues))
+	for _, issue := range issues {
+		workItems = append(workItems, mapIssueWorkItem(remoteURL, issue))
 	}
-	return PullResult{IssueCount: searchResult.Total}, nil
+	return PullResult{WorkItems: workItems}
+}
+
+func mapIssueWorkItem(remoteURL string, issue jiraapi.JiraIssue) kernel.WorkItem {
+	return kernel.WorkItem{
+		Remote:   remoteURL,
+		Provider: "jira",
+		ID:       issue.ID,
+		Key:      issue.Key,
+		URL:      strings.TrimRight(remoteURL, "/") + "/browse/" + issue.Key,
+		Title:    issue.Fields.Summary,
+		Fields: []kernel.Field{
+			{Name: "project", ProviderKey: "project", Type: "string", Value: issue.Fields.Project.Key, Editable: false},
+			{Name: "issueType", ProviderKey: "issuetype", Type: "string", Value: issue.Fields.IssueType.Name, Editable: false},
+		},
+		Metadata: map[string]string{"jira.baseURL": remoteURL},
+	}
 }
 
 func projectIssuesJQL(project string) string {
@@ -141,26 +207,23 @@ func selectedProjectIssuesJQL(project string, issueKeys []string) string {
 	return fmt.Sprintf("%s AND key in (%s)", projectIssuesJQL(project), strings.Join(issueKeys, ", "))
 }
 
-func newJiraConnection(jiraURL string) (jiraConnection, error) {
-	if jiraURL == "" {
-		return jiraConnection{}, fmt.Errorf("--url is required")
+func parseJiraURL(rawURL string) (JiraURL, error) {
+	if rawURL == "" {
+		return JiraURL{}, fmt.Errorf("--url is required")
 	}
-	baseURL, err := url.Parse(jiraURL)
+	baseURL, err := url.Parse(rawURL)
 	if err != nil {
-		return jiraConnection{}, fmt.Errorf("--url: %w", err)
+		return JiraURL{}, fmt.Errorf("--url: %w", err)
 	}
 	if baseURL.Scheme == "" || baseURL.Host == "" {
-		return jiraConnection{}, fmt.Errorf("--url must be absolute")
+		return JiraURL{}, fmt.Errorf("--url must be absolute")
 	}
-	return jiraConnection{URL: jiraURL}, nil
+	return JiraURL{value: *baseURL}, nil
 }
 
 func defaultAPIFactory(environment env.Env) apiFactory {
-	return func(connection jiraConnection, pat string) (jiraapi.JiraAPI, error) {
-		baseURL, err := url.Parse(connection.URL)
-		if err != nil {
-			return nil, err
-		}
-		return jiraapi.NewAuthenticatedRestClient(baseURL, environment.HTTPClient, pat)
+	return func(jiraURL JiraURL, pat string) (jiraapi.JiraAPI, error) {
+		baseURL := jiraURL.value
+		return jiraapi.NewAuthenticatedRestClient(&baseURL, environment.HTTPClient, pat)
 	}
 }

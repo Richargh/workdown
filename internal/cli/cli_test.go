@@ -104,21 +104,85 @@ func TestProviderCommandsAreNotRootCommands(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestJiraRemotePullCommandCountsSelectedProjectIssues(t *testing.T) {
+func TestJiraRemotePullCommandEmitsInterchangeJSON(t *testing.T) {
 	// given
 	environment := env.NewMemEnv()
-	api := jiraapi.NewIssueSearchMemClient(newServerInfo(t, "https://jira.example.test", "9.12.0"), 4)
+	api := jiraapi.NewIssueSearchWithIssuesMemClient(newServerInfo(t, "https://jira.example.test", "9.12.0"), []jiraapi.JiraIssue{
+		newJiraIssue("10001", "PROJ-1", "PROJ", "Task", "Write docs"),
+	})
 	root := New(environment, func(environment env.Env) kernelplugin.RemotePlugin {
 		return jiracli.NewWithService(environment, jira.NewWithAPI(environment, api))
 	})
 
 	// when
-	stdout, err := runCommand(t, root, "remotes", "jira", "pull", "--url", "https://jira.example.test", "--project", "PROJ", "--issues", "PROJ-1,PROJ-2", "--pat", "secret-token")
+	stdout, err := runCommand(t, root, "remotes", "jira", "pull", "--url", "https://jira.example.test", "--project", "PROJ", "--pat", "secret-token")
 
 	// then
 	require.NoError(t, err)
-	require.Equal(t, "4 issues\n", stdout)
-	require.Equal(t, []string{"project = PROJ AND key in (PROJ-1, PROJ-2)"}, jiraapi.SearchIssuesQueries(api))
+	require.Equal(t, `[
+  {
+    "remote": "https://jira.example.test",
+    "provider": "jira",
+    "id": "10001",
+    "key": "PROJ-1",
+    "url": "https://jira.example.test/browse/PROJ-1",
+    "title": "Write docs",
+    "fields": [
+      {
+        "name": "project",
+        "providerKey": "project",
+        "type": "string",
+        "value": "PROJ",
+        "editable": false
+      },
+      {
+        "name": "issueType",
+        "providerKey": "issuetype",
+        "type": "string",
+        "value": "Task",
+        "editable": false
+      }
+    ],
+    "metadata": {
+      "jira.baseURL": "https://jira.example.test"
+    }
+  }
+]
+`, stdout)
+	require.Equal(t, []string{"project = PROJ"}, jiraapi.SearchIssuesQueries(api))
+	require.Equal(t, []int{5}, jiraapi.SearchIssuesLimits(api))
+}
+
+func TestJiraRemotePullCommandUsesLimit(t *testing.T) {
+	// given
+	environment := env.NewMemEnv()
+	api := jiraapi.NewIssueSearchWithIssuesMemClient(newServerInfo(t, "https://jira.example.test", "9.12.0"), []jiraapi.JiraIssue{})
+	root := New(environment, func(environment env.Env) kernelplugin.RemotePlugin {
+		return jiracli.NewWithService(environment, jira.NewWithAPI(environment, api))
+	})
+
+	// when
+	_, err := runCommand(t, root, "remotes", "jira", "pull", "--url", "https://jira.example.test", "--project", "PROJ", "--limit", "2", "--pat", "secret-token")
+
+	// then
+	require.NoError(t, err)
+	require.Equal(t, []int{2}, jiraapi.SearchIssuesLimits(api))
+}
+
+func TestJiraRemotePullCommandLimitsToAllSelectedIssuesByDefault(t *testing.T) {
+	// given
+	environment := env.NewMemEnv()
+	api := jiraapi.NewIssueSearchWithIssuesMemClient(newServerInfo(t, "https://jira.example.test", "9.12.0"), []jiraapi.JiraIssue{})
+	root := New(environment, func(environment env.Env) kernelplugin.RemotePlugin {
+		return jiracli.NewWithService(environment, jira.NewWithAPI(environment, api))
+	})
+
+	// when
+	_, err := runCommand(t, root, "remotes", "jira", "pull", "--url", "https://jira.example.test", "--project", "PROJ", "--issues", "PROJ-1,PROJ-2,PROJ-3,PROJ-4,PROJ-5,PROJ-6", "--pat", "secret-token")
+
+	// then
+	require.NoError(t, err)
+	require.Equal(t, []int{6}, jiraapi.SearchIssuesLimits(api))
 }
 
 func TestPluginsCommandDoesNotExist(t *testing.T) {
@@ -131,6 +195,18 @@ func TestPluginsCommandDoesNotExist(t *testing.T) {
 
 	// then
 	require.Error(t, err)
+}
+
+func newJiraIssue(id string, key string, project string, issueType string, summary string) jiraapi.JiraIssue {
+	return jiraapi.JiraIssue{
+		ID:  id,
+		Key: key,
+		Fields: jiraapi.JiraIssueFields{
+			Summary:   summary,
+			IssueType: jiraapi.JiraNamedValue{Name: issueType},
+			Project:   jiraapi.JiraProject{Key: project},
+		},
+	}
 }
 
 func newServerInfo(t *testing.T, rawBaseURL string, rawVersion string) jiraapi.ServerInfo {

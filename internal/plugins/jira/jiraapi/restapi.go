@@ -6,12 +6,18 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 type restClient struct {
 	baseURL    url.URL
 	httpClient *http.Client
 	pat        string
+}
+
+type jiraServerInfoDTO struct {
+	BaseURL string `json:"baseUrl"`
+	Version string `json:"version"`
 }
 
 func NewRestClient(baseURL *url.URL, httpClient *http.Client) (JiraAPI, error) {
@@ -60,10 +66,7 @@ func (c *restClient) ServerInfo(ctx context.Context) (ServerInfo, error) {
 		return ServerInfo{}, fmt.Errorf("jira server info failed: %s", response.Status)
 	}
 
-	var payload struct {
-		BaseURL string `json:"baseUrl"`
-		Version string `json:"version"`
-	}
+	var payload jiraServerInfoDTO
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
 		return ServerInfo{}, err
 	}
@@ -98,37 +101,38 @@ func (c *restClient) ValidateConnection(ctx context.Context) error {
 	return nil
 }
 
-func (c *restClient) SearchIssues(ctx context.Context, jql string) (IssueSearchResult, error) {
+func (c *restClient) SearchIssues(ctx context.Context, search JiraIssueSearchRequest) (JiraIssueSearchResult, error) {
 	searchURL := c.baseURL.JoinPath("rest", "api", "2", "search")
 	query := searchURL.Query()
-	query.Set("jql", jql)
-	query.Set("maxResults", "0")
+	query.Set("jql", search.JQL)
+	query.Set("maxResults", fmt.Sprintf("%d", search.MaxResults))
+	if len(search.Fields) > 0 {
+		query.Set("fields", strings.Join(search.Fields, ","))
+	}
 	searchURL.RawQuery = query.Encode()
 	searchURL.Fragment = ""
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, searchURL.String(), nil)
 	if err != nil {
-		return IssueSearchResult{}, err
+		return JiraIssueSearchResult{}, err
 	}
 	c.authorize(request)
 
 	response, err := c.httpClient.Do(request)
 	if err != nil {
-		return IssueSearchResult{}, err
+		return JiraIssueSearchResult{}, err
 	}
 	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode < 200 || response.StatusCode > 299 {
-		return IssueSearchResult{}, fmt.Errorf("jira issue search failed: %s", response.Status)
+		return JiraIssueSearchResult{}, fmt.Errorf("jira issue search failed: %s", response.Status)
 	}
 
-	var payload struct {
-		Total int `json:"total"`
-	}
+	var payload JiraIssueSearchResult
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-		return IssueSearchResult{}, err
+		return JiraIssueSearchResult{}, err
 	}
-	return IssueSearchResult{Total: payload.Total}, nil
+	return payload, nil
 }
 
 func (c *restClient) authorize(request *http.Request) {
