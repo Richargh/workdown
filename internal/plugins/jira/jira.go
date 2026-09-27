@@ -94,6 +94,7 @@ type PullRequest struct {
 	PAT       string
 	Project   string
 	IssueKeys []string
+	Mine      bool
 	Limit     int
 }
 
@@ -111,7 +112,7 @@ func (p *Plugin) Pull(ctx context.Context, request PullRequest) (PullResult, err
 	}
 	searchResult, err := api.SearchIssues(ctx, jiraapi.JiraIssueSearchRequest{
 		JQL:        request.jql(),
-		Fields:     []string{"summary", "issuetype", "project"},
+		Fields:     []string{"summary", "issuetype", "project", "status", "reporter", "assignee"},
 		MaxResults: request.limit(),
 	})
 	if err != nil {
@@ -144,10 +145,14 @@ func (r PullRequest) validate() error {
 }
 
 func (r PullRequest) jql() string {
+	base := projectIssuesJQL(r.Project)
 	if len(r.IssueKeys) > 0 {
-		return selectedProjectIssuesJQL(r.Project, r.IssueKeys)
+		base = selectedProjectIssuesJQL(r.Project, r.IssueKeys)
 	}
-	return projectIssuesJQL(r.Project)
+	if r.Mine {
+		base += " AND assignee = currentUser()"
+	}
+	return base
 }
 
 func (r PullRequest) limit() int {
@@ -194,6 +199,9 @@ func mapIssueWorkItem(remoteURL string, issue jiraapi.JiraIssue) kernel.WorkItem
 		Fields: []kernel.Field{
 			{Name: "project", ProviderKey: "project", Type: "string", Value: issue.Fields.Project.Key, Editable: false},
 			{Name: "issueType", ProviderKey: "issuetype", Type: "string", Value: issue.Fields.IssueType.Name, Editable: false},
+			{Name: "status", ProviderKey: "status", Type: "string", Value: issue.Fields.Status.Name, Editable: false},
+			{Name: "author", ProviderKey: "reporter", Type: "string", Value: issue.Fields.Reporter.DisplayName, Editable: false},
+			{Name: "owner", ProviderKey: "assignee", Type: "string", Value: issue.Fields.Assignee.DisplayName, Editable: false},
 		},
 		Metadata: map[string]string{"jira.baseURL": remoteURL},
 	}

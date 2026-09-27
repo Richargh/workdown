@@ -34,6 +34,9 @@ type JiraIssueFields struct {
 	Summary   string         `json:"summary"`
 	IssueType JiraNamedValue `json:"issuetype"`
 	Project   JiraProject    `json:"project"`
+	Status    JiraNamedValue `json:"status"`
+	Reporter  JiraUser       `json:"reporter"`
+	Assignee  JiraUser       `json:"assignee"`
 }
 
 type JiraNamedValue struct {
@@ -42,6 +45,10 @@ type JiraNamedValue struct {
 
 type JiraProject struct {
 	Key string `json:"key"`
+}
+
+type JiraUser struct {
+	DisplayName string `json:"displayName"`
 }
 
 type JiraVersion struct {

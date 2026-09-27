@@ -1,6 +1,7 @@
 package jiracli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -80,6 +81,8 @@ func (a *adapter) newPullCommand() *cobra.Command {
 	var pat string
 	var project string
 	var issues string
+	var format string
+	var mine bool
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "pull",
@@ -89,11 +92,15 @@ func (a *adapter) newPullCommand() *cobra.Command {
 			if out == nil {
 				out = cmd.OutOrStdout()
 			}
+			if format != "json" {
+				return fmt.Errorf("--format must be json")
+			}
 			result, err := a.service.Pull(cmd.Context(), jira.PullRequest{
 				URL:       jiraURL,
 				PAT:       pat,
 				Project:   project,
 				IssueKeys: parseIssueKeys(issues),
+				Mine:      mine,
 				Limit:     limit,
 			})
 			if err != nil {
@@ -107,9 +114,26 @@ func (a *adapter) newPullCommand() *cobra.Command {
 	cmd.Flags().StringVar(&jiraURL, "url", "", "Jira base URL")
 	cmd.Flags().StringVar(&project, "project", "", "Jira project key")
 	cmd.Flags().StringVar(&issues, "issues", "", "Comma-separated Jira issue keys to pull")
+	cmd.Flags().BoolVar(&mine, "mine", false, "Pull issues assigned to the authenticated user")
+	cmd.Flags().StringVar(&format, "format", "json", "Output format")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of Jira issues to pull")
 	cmd.Flags().StringVar(&pat, "pat", "", "Jira personal access token")
 	return cmd
+}
+
+func (a *adapter) PullWorkItems(ctx context.Context, request plugin.PullRequest) (plugin.PullResult, error) {
+	result, err := a.service.Pull(ctx, jira.PullRequest{
+		URL:       request.URL,
+		PAT:       request.PAT,
+		Project:   request.Project,
+		IssueKeys: request.IssueKeys,
+		Mine:      request.Mine,
+		Limit:     request.Limit,
+	})
+	if err != nil {
+		return plugin.PullResult{}, err
+	}
+	return plugin.PullResult{WorkItems: result.WorkItems}, nil
 }
 
 func parseIssueKeys(issues string) []string {

@@ -99,7 +99,7 @@ func TestJiraPullEmitsInterchangeWorkItems(t *testing.T) {
 	// then
 	require.NoError(t, err)
 	require.Equal(t, []string{"project = PROJ"}, jiraapi.SearchIssuesQueries(api))
-	require.Equal(t, [][]string{{"summary", "issuetype", "project"}}, jiraapi.SearchIssuesFields(api))
+	require.Equal(t, [][]string{{"summary", "issuetype", "project", "status", "reporter", "assignee"}}, jiraapi.SearchIssuesFields(api))
 	require.Equal(t, []int{5}, jiraapi.SearchIssuesLimits(api))
 	require.Len(t, result.WorkItems, 2)
 	require.Equal(t, "jira", result.WorkItems[0].Provider)
@@ -109,8 +109,29 @@ func TestJiraPullEmitsInterchangeWorkItems(t *testing.T) {
 	require.Equal(t, []kernel.Field{
 		{Name: "project", ProviderKey: "project", Type: "string", Value: "PROJ", Editable: false},
 		{Name: "issueType", ProviderKey: "issuetype", Type: "string", Value: "Task", Editable: false},
+		{Name: "status", ProviderKey: "status", Type: "string", Value: "To Do", Editable: false},
+		{Name: "author", ProviderKey: "reporter", Type: "string", Value: "Alice Author", Editable: false},
+		{Name: "owner", ProviderKey: "assignee", Type: "string", Value: "Bob Owner", Editable: false},
 	}, result.WorkItems[0].Fields)
 	require.Equal(t, "https://jira.example.test/browse/PROJ-1", result.WorkItems[0].URL)
+}
+
+func TestJiraPullCanLimitToMyIssues(t *testing.T) {
+	// given
+	environment := env.NewMemEnv()
+	api := jiraapi.NewIssueSearchWithIssuesMemClient(newServerInfo(t), []jiraapi.JiraIssue{
+		newJiraIssue("10001", "PROJ-1", "PROJ", "Task", "Write docs"),
+	})
+	plugin := NewWithAPI(environment, api)
+
+	// when
+	result, err := plugin.Pull(context.Background(), PullRequest{URL: "https://jira.example.test", Project: "PROJ", PAT: "secret-token", Mine: true})
+
+	// then
+	require.NoError(t, err)
+	require.Equal(t, []string{"project = PROJ AND assignee = currentUser()"}, jiraapi.SearchIssuesQueries(api))
+	require.Len(t, result.WorkItems, 1)
+	require.Equal(t, "PROJ-1", result.WorkItems[0].Key)
 }
 
 func TestJiraPullUsesRequestedLimit(t *testing.T) {
@@ -189,6 +210,9 @@ func newJiraIssue(id string, key string, project string, issueType string, summa
 			Summary:   summary,
 			IssueType: jiraapi.JiraNamedValue{Name: issueType},
 			Project:   jiraapi.JiraProject{Key: project},
+			Status:    jiraapi.JiraNamedValue{Name: "To Do"},
+			Reporter:  jiraapi.JiraUser{DisplayName: "Alice Author"},
+			Assignee:  jiraapi.JiraUser{DisplayName: "Bob Owner"},
 		},
 	}
 }
