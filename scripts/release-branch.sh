@@ -42,6 +42,6 @@ fi
 git switch -c "$branch"
 go run ./internal/tools/releaseprep --version "$version"
 git add CHANGELOG.md VERSION
-git commit -m "^ E(release): release $version"
+git commit -m "^ E(release) release $version"
 
 echo "Created $branch. Push it with: git push -u origin $branch"
