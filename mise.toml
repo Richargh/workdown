@@ -2,6 +2,7 @@
 go = ["1.27.1"]
 golangci-lint = ["2.13.2"]
 goreleaser = ["2.12.7"]
+shellcheck = ["0.11.0"]
 
 [tasks.check]
 description = "Format, lint, vet, test, and verify generated docs"
@@ -10,9 +11,14 @@ run = [
   "go vet ./...",
   "golangci-lint run",
   "go test ./...",
+  "./scripts/check-shellcheck.sh",
   "go run ./internal/tools/clidocs --check",
 ]
 
 [tasks."docs:cli"]
 description = "Generate CLI reference docs from Cobra commands"
 run = "go run ./internal/tools/clidocs"
+
+[tasks."release:branch"]
+description = "Create a local release branch and commit changelog and VERSION updates"
+run = "./scripts/release-branch.sh \"$@\""
