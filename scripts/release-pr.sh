@@ -12,6 +12,7 @@ if ! command -v gh >/dev/null 2>&1; then
   exit 1
 fi
 
+current_branch=$(git branch --show-current)
 branch="release/$version"
 title="^ E(release): release $version"
 body=$(cat <<EOF
@@ -23,4 +24,5 @@ EOF
 
 ./scripts/release-branch.sh "$version"
 git push -u origin "$branch"
-gh pr create --base trunk --head "$branch" --title "$title" --body "$body" --label release
+gh pr create --base "$current_branch" --head "$branch" --title "$title" --body "$body" --label release
+git switch "$current_branch"
