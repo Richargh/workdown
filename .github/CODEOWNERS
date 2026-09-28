@@ -1,0 +1,4 @@
+# Release and CI automation must be reviewed by the repository owner.
+.github/ @richargh
+.goreleaser.yaml @richargh
+mise.toml @richargh
