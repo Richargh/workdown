@@ -53,6 +53,27 @@ mise run docs:cli
 
 The reference is automatically checked by `mise run check`.
 
+## Release
+
+Prepare a release pull request from `trunk`:
+
+```bash
+mise run release:pr -- 0.0.3
+```
+
+This command:
+
+- creates a `release/<version>` branch
+- moves `CHANGELOG.md` `Unreleased` notes to the release version
+- updates `VERSION`
+- commits the release files
+- pushes the branch
+- opens a pull request against `trunk`
+
+After the release pull request is merged, CI checks `trunk`. 
+Since `VERSION` changed, CI creates the `v<version>` tag and publishes the GitHub release.
+Done.
+
 ## Project layout
 
 ```text
