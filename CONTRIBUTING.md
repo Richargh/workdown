@@ -90,7 +90,7 @@ Use [Risk-Aware Commit Notation](https://github.com/RefactoringCombos/ArlosCommi
 Format:
 
 ```text
-<RISK> <INTENTION>(<scope>): <short imperative summary>
+<RISK> <INTENTION>(<scope>) <short imperative summary>
 ```
 
 Risk symbols:
