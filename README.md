@@ -1,45 +1,45 @@
 # Workdown
 
-Workdown is a CLI for syncing issue tracker work items with local Markdown files. 
+Workdown is a CLI for syncing issue tracker work items with local Markdown files.
 
-Has plugins to support:
+Included plugins:
 
 * Jira
 
 ## Usage
 
-The full CLI reference is in [docs/cli/workdown.md](docs/cli/workdown.md).
-
-### Check Jira access
+Download a released binary from [GitHub Releases](https://github.com/Richargh/workdown/releases) and
+put it on your `PATH`, then:
 
 ```bash
-go run ./cmd/workdown remotes jira check \
+# Check the version
+workdown -v
+
+# Check Jira access
+workdown remotes jira check \
   --url https://jira.example.test \
   --project PROJ \
   --pat "$JIRA_PAT"
-```
 
-### Pull Jira issues to Markdown files
-
-```bash
-go run ./cmd/workdown pull \
+# Pull Jira issues
+# Stores them locally as items/PROJ-*.md
+workdown pull \
   --url https://jira.example.test \
   --project PROJ \
   --out items \
   --pat "$JIRA_PAT"
 ```
 
-This writes files such as:
+## Local usage and contributing
 
-```text
-items/PROJ-1.md
-items/PROJ-2.md
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for:
+
+* development setup
+* local usage
+* build/test commands
+* project layout
+* dependency management
 
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, build/test commands, project layout, and dependency management.
