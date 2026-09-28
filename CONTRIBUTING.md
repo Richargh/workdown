@@ -83,6 +83,10 @@ internal/kernel/               Shared plugin contracts and ports
 internal/plugins/jira/         Jira plugin entrypoint and commands
 ```
 
+## AI-Assisted Contributions
+
+All contributors must follow our [AI Policy](./AI_POLICY.md) when using AI tools to assist contributions.
+
 ## Commit messages
 
 Use [Risk-Aware Commit Notation](https://github.com/RefactoringCombos/ArlosCommitNotation) for commit messages.
