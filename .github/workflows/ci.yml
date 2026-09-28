@@ -2,15 +2,24 @@ name: CI
 
 on:
   push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
 
 jobs:
-  check:
-    name: Check
+  check-and-build:
+    name: Check and Build
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Set up mise
         uses: jdx/mise-action@v4.3.0
@@ -31,4 +40,29 @@ jobs:
         run: mise run check
 
       - name: Build release snapshot
+        if: github.ref_type == 'branch'
         run: mise exec -- goreleaser release --snapshot --clean
+
+      - name: Release tagged version
+        if: github.ref_type == 'tag'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          echo "Verifying release tag $GITHUB_REF_NAME points to a commit on trunk."
+          git fetch origin trunk
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/trunk || {
+            echo "Release tag $GITHUB_REF_NAME does not point to a commit on trunk."
+            exit 1
+          }
+
+          version="${GITHUB_REF_NAME#v}"
+          test -n "$version"
+
+          file_version="$(tr -d '[:space:]' < VERSION)"
+          if [ "$version" != "$file_version" ]; then
+            echo "Release tag $GITHUB_REF_NAME does not match VERSION $file_version."
+            exit 1
+          fi
+
+          mise exec -- go run ./internal/tools/releaseprep --notes-for "$version" --output release-notes.md
+          mise exec -- goreleaser release --clean --release-notes release-notes.md

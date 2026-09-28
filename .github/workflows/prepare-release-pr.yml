@@ -1,0 +1,52 @@
+name: Prepare Release PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, for example 1.2.3
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare-release-pr:
+    name: Prepare Release PR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up mise
+        uses: jdx/mise-action@v4
+        with:
+          cache: true
+
+      - name: Prepare release files
+        run: go run ./internal/tools/releaseprep --version "${{ inputs.version }}"
+
+      - name: Open release pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ inputs.version }}"
+          branch="release/$version"
+          title="^ E(release): release $version"
+          body="Prepare release $version.
+
+          This pull request moves the manual changelog notes from Unreleased to $version and updates VERSION."
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add CHANGELOG.md VERSION
+          git commit -m "$title"
+          git push origin "$branch"
+
+          gh pr create --base trunk --head "$branch" --title "$title" --body "$body" --label release
