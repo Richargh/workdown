@@ -8,9 +8,28 @@ if [ -z "$version" ]; then
 fi
 
 branch="release/$version"
-if [ -n "$(git status --porcelain)" ]; then
-  echo "working tree must be clean before preparing a release" >&2
+changed_files=$(git status --short --untracked-files=no)
+if [ -n "$changed_files" ]; then
+  echo "Tracked files must be clean before preparing a release." >&2
+  echo "Changed tracked files:" >&2
+  printf '%s\n' "$changed_files" >&2
   exit 1
+fi
+
+untracked_files=$(git ls-files --others --exclude-standard)
+if [ -n "$untracked_files" ]; then
+  echo "Untracked files are present:"
+  printf '%s\n' "$untracked_files"
+  printf 'Continue and leave these files untracked? [y/N] '
+  read -r answer
+  case "$answer" in
+    y | Y | yes | YES)
+      ;;
+    *)
+      echo "release branch creation canceled" >&2
+      exit 1
+      ;;
+  esac
 fi
 
 git switch -c "$branch"
