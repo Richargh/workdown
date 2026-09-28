@@ -72,5 +72,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          mise exec -- go run ./internal/tools/releaseprep --notes-for "${{ steps.version.outputs.version }}" --output release-notes.md
-          mise exec -- goreleaser release --clean --release-notes release-notes.md
+          release_notes="$RUNNER_TEMP/release-notes.md"
+          mise exec -- go run ./internal/tools/releaseprep --notes-for "${{ steps.version.outputs.version }}" --output "$release_notes"
+          mise exec -- goreleaser release --clean --release-notes "$release_notes"

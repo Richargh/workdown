@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed release workflow dirty git state by writing generated release notes outside the repository.
+
 ## [0.0.5] - 2026-09-28
 
 ## Changed
