@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/Richargh/workdown/actions/workflows/ci.yml/badge.svg)](https://github.com/Richargh/workdown/actions/workflows/ci.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/Richargh/workdown)](https://github.com/Richargh/workdown/releases)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/Richargh/workdown?logo=go)](go.mod)
+[![mise](https://img.shields.io/badge/tools-mise-blue)](mise.toml)
 [![License](https://img.shields.io/github/license/Richargh/workdown)](LICENSE)
 
 `workdown` syncs issue tracker work items to your local file system as Markdown files.
