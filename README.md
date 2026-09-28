@@ -8,12 +8,32 @@ Has plugins to support:
 
 ## Usage
 
-```bash
-# show help
-go run ./cmd/workdown -h
+The full CLI reference is in [docs/cli/workdown.md](docs/cli/workdown.md).
 
-# list plugins
-go run ./cmd/workdown plugins
+### Check Jira access
+
+```bash
+go run ./cmd/workdown remotes jira check \
+  --url https://jira.example.test \
+  --project PROJ \
+  --pat "$JIRA_PAT"
+```
+
+### Pull Jira issues to Markdown files
+
+```bash
+go run ./cmd/workdown pull \
+  --url https://jira.example.test \
+  --project PROJ \
+  --out items \
+  --pat "$JIRA_PAT"
+```
+
+This writes files such as:
+
+```text
+items/PROJ-1.md
+items/PROJ-2.md
 ```
 
 ## Changelog

@@ -3,10 +3,15 @@ go = ["1.27.1"]
 golangci-lint = ["2.13.2"]
 
 [tasks.check]
-description = "Format, lint, vet, and test"
+description = "Format, lint, vet, test, and verify generated docs"
 run = [
   "go fmt ./...",
   "go vet ./...",
   "golangci-lint run",
   "go test ./...",
+  "go run ./internal/tools/clidocs --check",
 ]
+
+[tasks."docs:cli"]
+description = "Generate CLI reference docs from Cobra commands"
+run = "go run ./internal/tools/clidocs"

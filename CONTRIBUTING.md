@@ -21,24 +21,37 @@ If your shell does not automatically activate mise, prefix commands with `mise e
 mise exec -- go test ./...
 ```
 
-## Build and test
+## Usage
+
+Run from source:
+
+```bash
+go run ./cmd/workdown --help
+```
+
+Build a local binary:
+
+```bash
+go build -o build/workdown ./cmd/workdown
+./build/workdown --help
+```
+
+## Test
 
 ```bash
 # run the standard local checks
 mise run check
-
-# build
-go build -o build/workdown ./cmd/workdown
 ```
 
-The `check` task runs:
+## CLI reference
+
+Regenerate the CLI reference after command changes:
 
 ```bash
-go fmt ./...
-go vet ./...
-golangci-lint run
-go test ./...
+mise run docs:cli
 ```
+
+The reference is automatically checked by `mise run check`.
 
 ## Project layout
 
