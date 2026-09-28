@@ -7,6 +7,13 @@ if [ -z "$version" ]; then
   exit 2
 fi
 
+base_branch=trunk
+current_branch=$(git branch --show-current)
+if [ "$current_branch" != "$base_branch" ]; then
+  echo "release branch must be created from $base_branch; current branch is ${current_branch:-detached HEAD}" >&2
+  exit 1
+fi
+
 branch="release/$version"
 changed_files=$(git status --short --untracked-files=no)
 if [ -n "$changed_files" ]; then
