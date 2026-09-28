@@ -1,0 +1,62 @@
+version: 2
+
+project_name: workdown
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: workdown
+    main: ./cmd/workdown
+    binary: workdown
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -buildvcs=false
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - arm64
+      - amd64
+    ignore:
+      - goos: darwin
+        goarch: amd64
+      - goos: linux
+        goarch: arm64
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: workdown
+    ids:
+      - workdown
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- if eq .Os "darwin" }}macOS{{ else }}{{ title .Os }}{{ end }}_
+      {{- .Arch }}
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+      - CHANGELOG.md
+      - VERSION
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  disable: true
+

@@ -1,6 +1,7 @@
 [tools]
 go = ["1.27.1"]
 golangci-lint = ["2.13.2"]
+goreleaser = ["2.12.7"]
 
 [tasks.check]
 description = "Format, lint, vet, test, and verify generated docs"

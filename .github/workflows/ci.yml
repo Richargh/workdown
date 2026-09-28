@@ -30,3 +30,6 @@ jobs:
 
       - name: Run checks
         run: mise run check
+
+      - name: Build release snapshot
+        run: mise exec -- goreleaser release --snapshot --clean
