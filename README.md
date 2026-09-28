@@ -37,6 +37,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for:
 * development setup
 * local usage
 * build/test commands
+* release flow
+* commit message style
 * project layout
 * dependency management
 
