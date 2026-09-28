@@ -22,3 +22,7 @@ run = "go run ./internal/tools/clidocs"
 [tasks."release:branch"]
 description = "Create a local release branch and commit changelog and VERSION updates"
 run = "./scripts/release-branch.sh \"$@\""
+
+[tasks."release:pr"]
+description = "Create a release branch, push it, and open a pull request"
+run = "./scripts/release-pr.sh \"$@\""
