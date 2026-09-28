@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - "**"
-    tags:
-      - "v*"
 
 permissions:
   contents: write
@@ -39,30 +37,40 @@ jobs:
       - name: Run checks
         run: mise run check
 
+      - name: Check if VERSION changed
+        id: version-change
+        run: |
+          if [ "$GITHUB_REF_NAME" = "trunk" ] && git diff --name-only HEAD^ HEAD | grep -qx VERSION; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build release snapshot
-        if: github.ref_type == 'branch'
+        if: steps.version-change.outputs.changed != 'true'
         run: mise exec -- goreleaser release --snapshot --clean
 
+      - name: Read version
+        if: steps.version-change.outputs.changed == 'true'
+        id: version
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        if: steps.version-change.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
       - name: Release tagged version
-        if: github.ref_type == 'tag'
+        if: steps.version-change.outputs.changed == 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          echo "Verifying release tag $GITHUB_REF_NAME points to a commit on trunk."
-          git fetch origin trunk
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/trunk || {
-            echo "Release tag $GITHUB_REF_NAME does not point to a commit on trunk."
-            exit 1
-          }
-
-          version="${GITHUB_REF_NAME#v}"
-          test -n "$version"
-
-          file_version="$(tr -d '[:space:]' < VERSION)"
-          if [ "$version" != "$file_version" ]; then
-            echo "Release tag $GITHUB_REF_NAME does not match VERSION $file_version."
-            exit 1
-          fi
-
-          mise exec -- go run ./internal/tools/releaseprep --notes-for "$version" --output release-notes.md
+          mise exec -- go run ./internal/tools/releaseprep --notes-for "${{ steps.version.outputs.version }}" --output release-notes.md
           mise exec -- goreleaser release --clean --release-notes release-notes.md
