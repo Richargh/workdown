@@ -1,28 +1,40 @@
 # Workdown
 
-Workdown is a CLI for syncing issue tracker work items with local Markdown files.
+[![CI](https://github.com/Richargh/workdown/actions/workflows/ci.yml/badge.svg)](https://github.com/Richargh/workdown/actions/workflows/ci.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/Richargh/workdown)](https://github.com/Richargh/workdown/releases)
+[![License](https://img.shields.io/github/license/Richargh/workdown)](LICENSE)
 
-Included plugins:
+`workdown` syncs issue tracker work items to your local file system as Markdown files.
+
+Included issue tracker plugins:
 
 * Jira
 
+[Usage](#usage)
+• [Installation](#installation)
+• [Contributing](#contributing)
+• [Changelog](#changelog)
+
 ## Usage
 
-Download a released binary from [GitHub Releases](https://github.com/Richargh/workdown/releases) and
-put it on your `PATH`, then:
+Check the version:
 
 ```bash
-# Check the version
 workdown -v
+```
 
-# Check Jira access
+Check Jira access:
+
+```bash
 workdown remotes jira check \
   --url https://jira.example.test \
   --project PROJ \
   --pat "$JIRA_PAT"
+```
 
-# Pull Jira issues
-# Stores them locally as items/PROJ-*.md
+Pull Jira issues and store them locally as `items/PROJ-*.md`:
+
+```bash
 workdown pull \
   --url https://jira.example.test \
   --project PROJ \
@@ -30,7 +42,17 @@ workdown pull \
   --pat "$JIRA_PAT"
 ```
 
-## Local usage and contributing
+## Installation
+
+### From GitHub Releases
+
+Download a released binary from [GitHub Releases](https://github.com/Richargh/workdown/releases) and put it on your `PATH`.
+
+### From source
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and source build commands.
+
+## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for:
 
